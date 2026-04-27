@@ -1,0 +1,23 @@
+#!/usr/bin/env csh
+
+# File: makec
+# Func: compile C source files
+# Usage: makec name1 name2 ...
+# Files to be compiled: file = name.c
+
+if ( $# == 0 ) then
+    echo "Usage: makec name1 name2 ..."
+    exit
+endif
+
+echo "There are $# files to be compiled."
+
+while ( $# > 0 )
+    ( cc -c ${1}.c > /dev/tty ) >& ${1}.err
+    if ( -z ${1}.err ) then
+        echo "${1}.c is OK!"
+    else
+        echo "see error in file ${1}.err"
+    endif
+    shift
+end

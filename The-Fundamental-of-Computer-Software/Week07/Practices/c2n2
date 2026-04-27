@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+if [ -f "index" ]
+then
+    sed 's/ //g' index > /tmp/c2n2.index
+    awk -F= '{print "s/" $1 "/" $2 "/g"}' /tmp/c2n2.index > /tmp/c2n2.index.sed
+    sed -f /tmp/c2n2.index.sed ab > net
+    rm /tmp/c2n2.index /tmp/c2n2.index.sed
+else
+    echo "index file not found"
+    exit 1
+fi

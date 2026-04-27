@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+if [ -f "index" ]
+then
+    sed -E 's,^ *([A-Za-z0-9._]+) *= *([0-9]+) *$,s/\1/\2/g,' index > /tmp/c2n1.index.sed
+    sed -f /tmp/c2n1.index.sed ab > net
+    rm /tmp/c2n1.index.sed
+else
+    echo "index file not found"
+    exit 1
+fi

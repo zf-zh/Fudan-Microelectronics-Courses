@@ -9,3 +9,6 @@ This repository contains the course materials for the courses offered by SME/ICM
   - `Labs/`: Lab exercises and projects.
   - `Notes/`: Lecture notes and reference materials.
 
+- **The-Fundamental-of-Computer-Software**
+  - Problems, exercises and practices.
+

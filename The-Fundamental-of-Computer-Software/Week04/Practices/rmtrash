@@ -1,0 +1,12 @@
+#!/usr/bin/env csh
+
+set trash=$$.$$
+find $HOME -name "*.tmp" -print > $trash
+find $HOME -name core -print >> $trash
+foreach i ( `cat $trash` )
+    if ( ! -d $i ) then
+        echo "remove file $i"
+        rm $i
+    endif
+end
+rm $trash
