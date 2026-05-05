@@ -1,0 +1,11 @@
+module dff (
+input clk,
+input IN,
+output OUT
+);
+	always@ (CK) 
+		a <= IN;
+		b <= a;
+		c <= b;
+		OUT <= c;
+endmodule

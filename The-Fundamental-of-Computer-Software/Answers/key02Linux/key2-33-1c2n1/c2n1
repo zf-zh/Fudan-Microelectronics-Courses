@@ -1,0 +1,6 @@
+#! /bin/sh
+#usage: c2n ab index sfile net
+
+sed 's/=/\//' <$2 |\
+sed 's/ //g' | sed 's/^/s\//' | sed 's/$/\//' >$3
+sed -f $3 <$1 >$4

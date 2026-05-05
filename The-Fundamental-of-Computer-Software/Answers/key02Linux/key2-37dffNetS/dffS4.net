@@ -1,0 +1,6 @@
+clk clk dff0->CK dff1->CK dff2->CK dff3->CK;
+IN IN dff0->D;
+a dff0->Q dff1->D;
+b dff1->Q dff2->D;
+c dff2->Q dff3->D;
+OUT dff3->Q OUT;

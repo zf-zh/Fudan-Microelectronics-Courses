@@ -1,0 +1,23 @@
+#! /bin/sh
+#usage: getSC
+
+getCourse()
+{
+awk '
+	NR == 1 {point = $0}
+	NR != 1 {print $1, point, $2;}'
+}
+getCourse <math >course
+getCourse <eng >>course
+getCourse <sw >>course
+sort course |\
+awk '
+	$1 == prev  {printf "\t%s %s %s", $2, $3, $4;}
+	$1 != prev  {printf "\n%s", $0; prev=$1}' |\
+sed '/^$/d' |\
+awk '
+        { point = 0; score=0;
+          for(i=3; i<NF; i+=2)
+                 { s = $i; score += s; i++; point += s * $i;}
+          sc = point / score / (NF-1) * 3;
+          printf "%s\t%4.2f\n", $1, sc} ' >SC

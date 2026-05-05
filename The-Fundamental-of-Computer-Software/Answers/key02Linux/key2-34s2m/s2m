@@ -1,0 +1,8 @@
+#! /bin/sh
+#usage: s2m <student >maillist
+
+awk '
+	NR % 2 == 0 {printf "%s<%s@fudan.edu.cn>,\n", $3, $2}
+	NR % 2 != 0 {printf "%s<%s@fudan.edu.cn>, ", $3, $2}
+END {printf "\n"} ' |\
+sed '$s/, $//'

@@ -1,0 +1,4 @@
+b.PU VDD b.OUT b.I1
+b.PD VDD b.OUT b.I2
+b.NU b.OUT b.DOT b.I1
+b.ND b.DOT GND b.I2

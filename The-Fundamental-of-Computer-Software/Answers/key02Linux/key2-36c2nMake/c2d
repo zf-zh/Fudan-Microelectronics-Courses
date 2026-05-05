@@ -1,0 +1,8 @@
+sed 's/PU/'$2'.PU/' <$1 |\
+sed 's/PD/'$2'.PD/' |\
+sed 's/NU/'$2'.NU/' |\
+sed 's/ND/'$2'.ND/' |\
+sed 's/OUT/'$2'.OUT/' |\
+sed 's/DOT/'$2'.DOT/' |\
+sed 's/I1/'$2'.I1/' |\
+sed 's/I2/'$2'.I2/' >$2.$1

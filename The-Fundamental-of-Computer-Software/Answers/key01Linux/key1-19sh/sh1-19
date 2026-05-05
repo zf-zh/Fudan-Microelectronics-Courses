@@ -1,0 +1,13 @@
+echo N = $#
+n=3
+for i in $*	# (1)
+do
+	if [ $n -lt $# ]
+	then
+		n=`expr $n + 1`	# (2)
+		echo key= $i $n
+else
+	echo end  $i	# (3)
+		exit	# (4)
+	fi
+done

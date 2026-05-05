@@ -1,0 +1,6 @@
+#! /bin/sh
+#usage: c2n2 ab index sfile net
+
+sed 's/=/ = /' < $2 | \
+awk '{printf "s/%s/%s/\n", $1, $3}' >$3
+sed -f $3 $1 >$4 

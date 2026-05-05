@@ -1,0 +1,14 @@
+VDD =100
+ GND =  0
+a.OUT=10
+  a.I1 =11
+a.I2  =  12
+a.DOT =13
+b.OUT =20
+b.I1  =21
+b.I2  =  22
+b.DOT=23
+	c.OUT =30
+c.I1  =  31
+c.I2 = 32
+  c.DOT=33

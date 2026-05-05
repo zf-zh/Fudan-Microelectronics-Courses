@@ -1,0 +1,14 @@
+s/VDD/100/
+s/GND/0/
+s/a.OUT/10/
+s/a.I1/11/
+s/a.I2/12/
+s/a.DOT/13/
+s/b.OUT/20/
+s/b.I1/21/
+s/b.I2/22/
+s/b.DOT/23/
+s/	c.OUT/30/
+s/c.I1/31/
+s/c.I2/32/
+s/c.DOT/33/

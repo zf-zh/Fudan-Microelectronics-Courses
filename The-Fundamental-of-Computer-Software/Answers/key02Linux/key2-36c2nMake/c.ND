@@ -1,0 +1,4 @@
+c.PU VDD c.OUT c.I1
+c.PD VDD c.OUT c.I2
+c.NU c.OUT c.DOT c.I1
+c.ND c.DOT GND c.I2
