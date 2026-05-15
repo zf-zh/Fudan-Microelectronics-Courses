@@ -1,0 +1,8 @@
+metric,all prediction on,all prediction off,"BTB,L0BTB off",BPE off
+cycle,1140992,3040575,1385950,2278724
+insts,2040028,2040028,2040028,2040028
+CPI,0.5593,1.4905,0.6794,1.1170
+conditional branch miss,19,69999,19,69999
+indirect branch miss,0,0,0,0
+indirect branch inst,0,0,0,0
+DMPIS (dmips/MHz),4.9912,1.8717,4.1232,2.5066
