@@ -1,0 +1,279 @@
+#start from __start,
+#(1)initialize all registers
+#(2)initialize supervisor mode stack pointer
+#(3)set VBR register
+#(4)construct PMP 
+#(5)construct MMU 
+#(6)enable control reg such as EE and MMU
+#(9)jump to the main procedure using jmp to main
+ .include "core_init.h"
+	.text
+	.global	__start
+__start:
+
+
+# enable extension
+  li   x3, 0x400000
+  csrs mxstatus,x3
+
+# enable fpu
+  li   x3, 0x6000
+  csrs mstatus,x3
+
+# enable vector
+  li   x3, 0x800000
+  csrs mstatus,x3
+
+# enable unalign
+  li   x3, 0x8000
+  csrs mxstatus,x3
+
+
+# PART 1: initialize all registers
+  li  x1, 0
+  li  x2, 0
+  li  x3, 0
+  li  x4, 0
+  li  x5, 0
+  li  x6, 0
+  li  x7, 0
+  li  x8, 0
+  li  x9, 0
+  li  x10,0
+  li  x11,0
+  li  x12,0
+  li  x13,0
+  li  x14,0
+  li  x15,0
+  li  x16,0
+  li  x17,0
+  li  x18,0
+  li  x19,0
+  li  x20,0
+  li  x21,0
+  li  x22,0
+  li  x23,0
+  li  x24,0
+  li  x25,0
+  li  x26,0
+  li  x27,0
+  li  x28,0
+  li  x29,0
+  li  x30,0
+  li  x31,0
+
+## PART 2: initialize stack pointer & ppn
+  csrr x3,mhartid
+  li x4,1
+
+
+  .global cpu_0_sp	
+cpu_0_sp:
+  la x2, __kernel_stack
+
+# PART 3:initialize mtvec value  
+  la    x3,__trap_handler
+  csrw  mtvec,x3
+
+  
+  # enable mie
+  li   x3, 0x8
+  csrs mstatus,x3
+
+  # invalid all memory for IBP,BTB,BHT,DCACHE,ICACHE
+  li x3, 0x70013
+  csrs 0x7c2,x3  #mcor
+  #li x3,0x00003
+  #csrw 0x7c2,x3
+ 
+  # enable ICACHE,DCACHE,BHT,BTB,IBP,RAS,WA
+
+#---------------------------------------------------------------------------------
+#-----------------select the branch prediction configuration here-----------------
+#---------------------------------------------------------------------------------
+  # mhcr 4-RS, 5-BPE, 6-BTB, 7-IBPE, 12-L0BTB
+  # reserve the low 3 bits asserted, select 1 of 4 at the same time   
+
+  li x3, 0x10f7     #all prediction on
+  #li x3,0x0007      #all prediction off 
+  #li x3,0x00b7      #BTB,L0BTB off
+  #li x3,0x10d7      #BPE off
+
+  csrs 0x7c1,x3  #mhcr
+  #csrs mhcr,x3
+
+  #mccr2
+  #li x3,0xe0000000  
+  #li x3,0x0         
+  #csrs mccr2,x3
+
+  .global after_l2en 
+after_l2en:
+  # enable write allocate
+  li x3, 0x4
+  csrs 0x7c1,x3  #mhcr
+
+  # enable lbuf,way_pred,data_cache_prefetch, amr
+  #li x3, 0x7e30c    #old
+  li x3, 0x40008   #unable lbuf data_cache_prefetch
+  csrs 0x7c5,x3   #mhint
+
+  #set the cache access and miss count
+  #*1 inhibit counters counting
+  li x3, 0xffffffff
+  csrw mcountinhibit,x3
+
+  #*2 initial pmu counters manually
+  csrw mhpmcounter3,x0 #L1 Icache access
+  csrw mhpmcounter4,x0 #L1 Icache miss
+  csrw mhpmcounter8,x0 #conditional branch mispredict
+  csrw mhpmcounter10,x0 #Indirect Branch Mispredict Counter
+  csrw mhpmcounter11,x0 #Indirect Branch Instruction Counter
+  csrw mhpmcounter14,x0 #L1 Dcache read access
+  csrw mhpmcounter15,x0 #L1 Dcache read miss
+  csrw mhpmcounter16,x0 #L1 Dcache write access
+  csrw mhpmcounter17,x0 #L1 Dcache write miss
+  csrw mhpmcounter18,x0 #L2 Dcache read access
+  csrw mhpmcounter19,x0 #L2 Dcache read miss
+  csrw mhpmcounter20,x0 #L2 Dcache write access
+  csrw mhpmcounter21,x0 #L2 Dcache write miss
+
+  #*3 configure mhpmevent
+  li x3,0x1
+  csrw mhpmevent3,x3
+  li x3,0x2
+  csrw mhpmevent4,x3
+  li x3,0x6
+  csrw mhpmevent8,x3
+  li x3,0x8
+  csrw mhpmevent10,x3
+  li x3,0x9
+  csrw mhpmevent11,x3
+  li x3,0xc
+  csrw mhpmevent14,x3
+  li x3,0xd
+  csrw mhpmevent15,x3
+  li x3,0xe
+  csrw mhpmevent16,x3
+  li x3,0xf
+  csrw mhpmevent17,x3
+  li x3,0x10
+  csrw mhpmevent18,x3
+  li x3,0x11
+  csrw mhpmevent19,x3
+  li x3,0x12
+  csrw mhpmevent20,x3
+  li x3,0x13
+  csrw mhpmevent21,x3
+
+  #*4 configure mcounteren and scounteren
+  #li x3,0xffffffff
+  #csrw mcounteren,x3 # enable super mode to read hpmcounter
+  #li x3,0xffffffff
+  #csrw scounteren,x3 # enable user mode to read hpmcounter
+
+  #*5 enable couters to count what you want
+  csrw mcountinhibit,x0
+
+  jal	main
+
+  .global __exit
+__exit:
+  addi x10,x0,0x0
+  addi x1,x0,0x5a
+  addi x2,x0,0x6b
+  addi x3,x0,0x7c
+  sync
+  li   x3, 0x444333222
+  add x4,x0,x3
+#
+  .global __fail
+__fail:
+  addi x10,x0,0x0
+  addi x1,x0,0x2c
+  addi x2,x0,0x3b
+  sync
+  li x3,0x2382348720
+
+.section .text
+__trap_handler:
+  j __synchronous_exception
+  .align 2
+  j __asychronous_int
+  .align 2
+  nop #reserved
+  .align 2
+  j __asychronous_int
+  .align 2
+  j __asychronous_int
+  .align 2
+  j __asychronous_int
+  .align 2
+  nop #reserved
+  .align 2
+  j __asychronous_int
+  .align 2
+  j __asychronous_int
+  .align 2
+  j __asychronous_int
+  .align 2
+  nop #reserved
+  .align 2
+  j __asychronous_int
+  j __fail
+
+__synchronous_exception:
+  #push
+  sw   x13,-4(sp)
+  sw   x14,-8(sp)
+  sw   x15,-12(sp)
+  csrr x14,mcause
+  andi x15,x14,0x7ff    #cause
+  srli x14,x14,0x3b   #int
+  andi x14,x14,0x10   #mask bit
+  add  x14,x14,x15    #{int,cause}
+
+  slli x14,x14,0x3 #offset
+  la   x15,vector_table
+  add  x15,x14,x15  #target pc
+  lw   x14, 0(x15)  #get exception addr
+  lw   x13, -4(sp)  #recover x13
+  lw   x15, -12(sp) #recover x15
+  addi x14,x14,-4
+  jr   x14
+
+__asychronous_int:
+  sw   x13,-4(sp)
+  sw   x14,-8(sp)
+  sw   x15,-12(sp)
+  csrr x14,mcause
+  andi x15,x14,0x7ff    #cause
+  srli x14,x14,0x3b   #int
+  andi x14,x14,0x10   #mask bit
+  add  x14,x14,x15    #{int,cause}
+
+  slli x14,x14,0x3   #offset
+  la   x15,vector_table
+  add  x15,x14,x15   #target pc
+  lw   x14, 0(x15)   #get exception addr
+  lw   x13, -4(sp)   #recover x13
+  lw   x15, -12(sp)  #recover x15
+  addi x14,x14,-4
+  jr   x14
+
+.global vector_table
+ .align  10
+  vector_table:   #totally 256 entries
+  .rept   128
+  .long   __fail
+  .endr
+
+  .global __dummy
+__dummy:  
+  
+  .data
+  nop
+  nop
+  nop
+
+

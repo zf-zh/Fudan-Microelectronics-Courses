@@ -1,0 +1,17 @@
+metric,all prediction off,"BPE on, BTB off",all prediction on
+cycle,10997865,6415609,6353308
+insts,9449136,9449136,9449136
+CPI,1.164,0.6790,0.6724
+conditional branch miss,253598,4438,5014
+L1_Dread access,4572008,3780688,3795385
+L1_Dread miss,119705,118556,118557
+L1_Dread miss_rate,0.0262,0.0314,0.0312
+L1_Dwrite access,1920871,1897817,1898587
+L1_Dwrite miss,1809,1855,1825
+L1_Dwrite miss_rate,0.0009,0.0010,0.0010
+L2_Dread access,122481,120419,120424
+L2_Dread miss,4132,4120,4120
+L2_Dread miss_rate,0.0337,0.0342,0.0342
+L2_Dwrite access,120440,119744,119748
+L2_Dwrite miss,399,399,399
+L2_Dwrite miss_rate,0.0033,0.0033,0.0033

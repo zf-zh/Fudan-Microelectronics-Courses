@@ -1,0 +1,17 @@
+memory access instructions:
+	memory load:	3711234
+	memory store:	1879215
+
+arithmetic  instructions:
+	integer operation:	467003
+	floating ponit operation:	1643402
+
+branch instructions:
+	conditional branch:	504007
+	unconditional branch:	57642
+
+atomic instructions:	0
+cache manipulation instructions (C910 customized extension):	62802
+other instructions:	181245
+
+total:	8506550

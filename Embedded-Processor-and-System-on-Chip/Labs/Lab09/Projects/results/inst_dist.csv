@@ -1,0 +1,10 @@
+instruction,all_off,all_on,btb_off
+memory load,3711234,3711234,3711234
+memory store,1879215,1879215,1879215
+integer operation,374852,464660,467003
+floating ponit operation,1790980,1654227,1643402
+conditional branch,504007,504007,504007
+unconditional branch,57642,57642,57642
+atomic instructions,0,0,0
+cache manipulation instructions (C910 customized extension),62707,72401,62802
+other instructions,181191,183630,181245
