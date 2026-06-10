@@ -1,0 +1,603 @@
+#include "convolutional_layer.h"
+#include "utils.h"
+#include "im2col.h"
+#include "col2im.h"
+#include "blas.h"
+#include "gemm.h"
+#include <stdio.h>
+#include <time.h>
+#include "work.h"
+#include "stdlib.h"
+#include "pmu.h"
+//#include <dlfcn.h>
+
+#ifdef AI2
+#include "xnor_layer.h"
+#endif
+
+void swap_binary(convolutional_layer *l)
+{
+    float *swap = l->weights;
+    l->weights = l->binary_weights;
+    l->binary_weights = swap;
+}
+
+void binarize_weights(float *weights, int n, int size, float *binary)
+{
+    int i, f;
+    for(f = 0; f < n; ++f){
+        float mean = 0;
+        for(i = 0; i < size; ++i){
+            mean += fabs(weights[f*size + i]);
+        }
+        mean = mean / size;
+        for(i = 0; i < size; ++i){
+            binary[f*size + i] = (weights[f*size + i] > 0) ? mean : -mean;
+        }
+    }
+}
+
+void binarize_cpu(float *input, int n, float *binary)
+{
+    int i;
+    for(i = 0; i < n; ++i){
+        binary[i] = (input[i] > 0) ? 1 : -1;
+    }
+}
+
+void binarize_input(float *input, int n, int size, float *binary)
+{
+    int i, s;
+    for(s = 0; s < size; ++s){
+        float mean = 0;
+        for(i = 0; i < n; ++i){
+            mean += fabs(input[i*size + s]);
+        }
+        mean = mean / n;
+        for(i = 0; i < n; ++i){
+            binary[i*size + s] = (input[i*size + s] > 0) ? mean : -mean;
+        }
+    }
+}
+
+int convolutional_out_height(convolutional_layer l)
+{
+    return (l.h + 2*l.pad - l.size) / l.stride + 1;
+}
+
+int convolutional_out_width(convolutional_layer l)
+{
+    return (l.w + 2*l.pad - l.size) / l.stride + 1;
+}
+
+image get_convolutional_image(convolutional_layer l)
+{
+    return float_to_image(l.out_w,l.out_h,l.out_c,l.output);
+}
+
+image get_convolutional_delta(convolutional_layer l)
+{
+    return float_to_image(l.out_w,l.out_h,l.out_c,l.delta);
+}
+
+static size_t get_workspace_size(layer l){
+
+    return (size_t)l.out_h*l.out_w*l.size*l.size*l.c/l.groups*sizeof(float);
+}
+
+
+
+convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
+{
+    int i;
+    convolutional_layer l = {0};
+    l.type = CONVOLUTIONAL;
+
+    l.groups = groups;
+    l.h = h;
+    l.w = w;
+    l.c = c;
+    l.n = n;
+    l.binary = binary;
+    l.xnor = xnor;
+    l.batch = batch;
+    l.stride = stride;
+    l.size = size;
+    l.pad = padding;
+    l.batch_normalize = batch_normalize;
+
+    l.weights = calloc(c/groups*n*size*size, sizeof(float));
+    l.weight_updates = calloc(c/groups*n*size*size, sizeof(float));
+
+    l.biases = calloc(n, sizeof(float));
+    l.bias_updates = calloc(n, sizeof(float));
+
+    l.nweights = c/groups*n*size*size;
+    l.nbiases = n;
+
+    float scale = sqrt(2./(size*size*c/l.groups));
+    for(i = 0; i < l.nweights; ++i) l.weights[i] = scale*rand_normal();
+    int out_w = convolutional_out_width(l);
+    int out_h = convolutional_out_height(l);
+    l.out_h = out_h;
+    l.out_w = out_w;
+    l.out_c = n;
+    l.outputs = l.out_h * l.out_w * l.out_c;
+    l.inputs = l.w * l.h * l.c;
+
+    l.output = calloc(l.batch*l.outputs, sizeof(float));
+    l.delta  = calloc(l.batch*l.outputs, sizeof(float));
+
+    l.forward = forward_convolutional_layer;
+    l.backward = backward_convolutional_layer;
+    l.update = update_convolutional_layer;
+    if(binary){
+        l.binary_weights = calloc(l.nweights, sizeof(float));
+        l.cweights = calloc(l.nweights, sizeof(char));
+        l.scales = calloc(n, sizeof(float));
+    }
+    if(xnor){
+        l.binary_weights = calloc(l.nweights, sizeof(float));
+        l.binary_input = calloc(l.inputs*l.batch, sizeof(float));
+    }
+
+    if(batch_normalize){
+        l.scales = calloc(n, sizeof(float));
+        l.scale_updates = calloc(n, sizeof(float));
+        for(i = 0; i < n; ++i){
+            l.scales[i] = 1;
+        }
+
+        l.mean = calloc(n, sizeof(float));
+        l.variance = calloc(n, sizeof(float));
+
+        l.mean_delta = calloc(n, sizeof(float));
+        l.variance_delta = calloc(n, sizeof(float));
+
+        l.rolling_mean = calloc(n, sizeof(float));
+        l.rolling_variance = calloc(n, sizeof(float));
+        l.x = calloc(l.batch*l.outputs, sizeof(float));
+        l.x_norm = calloc(l.batch*l.outputs, sizeof(float));
+    }
+    if(adam){
+        l.m = calloc(l.nweights, sizeof(float));
+        l.v = calloc(l.nweights, sizeof(float));
+        l.bias_m = calloc(n, sizeof(float));
+        l.scale_m = calloc(n, sizeof(float));
+        l.bias_v = calloc(n, sizeof(float));
+        l.scale_v = calloc(n, sizeof(float));
+    }
+
+    l.workspace_size = get_workspace_size(l);
+    l.activation = activation;
+
+    fprintf(stderr, "conv  %5d %2d x%2d /%2d  %4d x%4d x%4d   ->  %4d x%4d x%4d  %5.3f BFLOPs\n", n, size, size, stride, w, h, c, l.out_w, l.out_h, l.out_c, (2.0 * l.n * l.size*l.size*l.c/l.groups * l.out_h*l.out_w)/1000000000.);
+
+    return l;
+}
+
+
+void add_bias(float *output, float *biases, int batch, int n, int size)
+{
+    int i,j,b;
+    for(b = 0; b < batch; ++b){
+        for(i = 0; i < n; ++i){
+            for(j = 0; j < size; ++j){
+                output[(b*n + i)*size + j] += biases[i];
+            }
+        }
+    }
+}
+
+void scale_bias(float *output, float *scales, int batch, int n, int size)
+{
+    int i,j,b;
+    for(b = 0; b < batch; ++b){
+        for(i = 0; i < n; ++i){
+            for(j = 0; j < size; ++j){
+                output[(b*n + i)*size + j] *= scales[i];
+            }
+        }
+    }
+}
+
+void backward_bias(float *bias_updates, float *delta, int batch, int n, int size)
+{
+    int i,b;
+    for(b = 0; b < batch; ++b){
+        for(i = 0; i < n; ++i){
+            bias_updates[i] += sum_array(delta+size*(i+b*n), size);
+        }
+    }
+}
+
+void forward_batchnorm_layer(layer l, network net)
+{
+    if(l.type == BATCHNORM) copy_cpu(l.outputs*l.batch, net.input, 1, l.output, 1);
+    copy_cpu(l.outputs*l.batch, l.output, 1, l.x, 1);
+    if(0)
+    {
+        if(net.index==0)
+            {
+                printf("%d\n",net.train);
+            }
+    }
+    
+    if(net.train){
+        mean_cpu(l.output, l.batch, l.out_c, l.out_h*l.out_w, l.mean);
+        variance_cpu(l.output, l.mean, l.batch, l.out_c, l.out_h*l.out_w, l.variance);
+
+        scal_cpu(l.out_c, .99, l.rolling_mean, 1);
+        axpy_cpu(l.out_c, .01, l.mean, 1, l.rolling_mean, 1);
+        scal_cpu(l.out_c, .99, l.rolling_variance, 1);
+        axpy_cpu(l.out_c, .01, l.variance, 1, l.rolling_variance, 1);
+
+        normalize_cpu(l.output, l.mean, l.variance, l.batch, l.out_c, l.out_h*l.out_w);   
+        copy_cpu(l.outputs*l.batch, l.output, 1, l.x_norm, 1);
+    } else {
+        if(0)
+        {
+            if(net.index==0)
+            {
+                for(int q=0;q<l.n;q++)
+                {
+                    printf("%d %d\n",l.rolling_mean[q],l.rolling_variance[q]);
+                }
+            }
+        }
+        normalize_cpu(l.output, l.rolling_mean, l.rolling_variance, l.batch, l.out_c, l.out_h*l.out_w);
+    }
+    scale_bias(l.output, l.scales, l.batch, l.out_c, l.out_h*l.out_w);
+    add_bias(l.output, l.biases, l.batch, l.out_c, l.out_h*l.out_w);
+}
+
+
+void backward_convolutional_layer(convolutional_layer l, network net)
+{
+    return;
+}
+
+void update_convolutional_layer(convolutional_layer l, update_args a)
+{
+    return;
+}
+
+
+image get_convolutional_weight(convolutional_layer l, int i)
+{
+    int h = l.size;
+    int w = l.size;
+    int c = l.c/l.groups;
+    return float_to_image(w,h,c,l.weights+i*h*w*c);
+}
+
+void rgbgr_weights(convolutional_layer l)
+{
+    int i;
+    for(i = 0; i < l.n; ++i){
+        image im = get_convolutional_weight(l, i);
+        if (im.c == 3) {
+            rgbgr_image(im);
+        }
+    }
+}
+
+void rescale_weights(convolutional_layer l, float scale, float trans)
+{
+    int i;
+    for(i = 0; i < l.n; ++i){
+        image im = get_convolutional_weight(l, i);
+        if (im.c == 3) {
+            scale_image(im, scale);
+            float sum = sum_array(im.data, im.w*im.h*im.c);
+            l.biases[i] += sum*trans;
+        }
+    }
+}
+
+image *get_weights(convolutional_layer l)
+{
+    image *weights = calloc(l.n, sizeof(image));
+    int i;
+    for(i = 0; i < l.n; ++i){
+        weights[i] = copy_image(get_convolutional_weight(l, i));
+        normalize_image(weights[i]);
+        /*
+           char buff[256];
+           sprintf(buff, "filter%d", i);
+           save_image(weights[i], buff);
+         */
+    }
+    //error("hey");
+    return weights;
+}
+
+image *visualize_convolutional_layer(convolutional_layer l, char *window, image *prev_weights)
+{
+    image *single_weights = get_weights(l);
+    show_images(single_weights, l.n, window);
+
+    image delta = get_convolutional_image(l);
+    image dc = collapse_image_layers(delta, 1);
+    char buff[256];
+    sprintf(buff, "%s: Output", window);
+    //show_image(dc, buff);
+    //save_image(dc, buff);
+    free_image(dc);
+    return single_weights;
+}
+
+void mac_operation(const int input_idx, const int weight_idx, const float* tmp_pad, const float* tmp_weight, const float* conv_tmp);
+
+
+void my_fill_cpu(int N, float ALPHA, float *X, int INCX)
+{
+    int i;
+    for(i = 0; i < N; ++i) X[i*INCX] = ALPHA;
+}
+
+float my_im2col_get_pixel(float *im, int height, int width, int channels,
+                        int row, int col, int channel, int pad)
+{
+    row -= pad;
+    col -= pad;
+
+    if (row < 0 || col < 0 ||
+        row >= height || col >= width) return 0;
+    return im[col + width*(row + height*channel)];
+}
+
+void my_im2col_cpu(float* data_im,
+     int channels,  int height,  int width,
+     int ksize,  int stride, int pad, float* data_col) 
+{
+    int c,h,w;
+    int height_col = (height + 2*pad - ksize) / stride + 1;
+    int width_col = (width + 2*pad - ksize) / stride + 1;
+
+    int channels_col = channels * ksize * ksize;
+    for (c = 0; c < channels_col; ++c) {
+        int w_offset = c % ksize;
+        int h_offset = (c / ksize) % ksize;
+        int c_im = c / ksize / ksize;
+        for (h = 0; h < height_col; ++h) {
+            for (w = 0; w < width_col; ++w) {
+                int im_row = h_offset + h * stride;
+                int im_col = w_offset + w * stride;
+                int col_index = (c * height_col + h) * width_col + w;
+                data_col[col_index] = my_im2col_get_pixel(data_im, height, width, channels,
+                        im_row, im_col, c_im, pad);
+            }
+        }
+    }
+}
+
+void my_my_gemm_nn(int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(k = 0; k < K; ++k){
+            register float A_PART = ALPHA*A[i*lda+k];
+            for(j = 0; j < N; ++j){
+                C[i*ldc+j] += A_PART*B[k*ldb+j];
+            }
+        }
+    }
+}
+
+void my_my_gemm_nt(int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(j = 0; j < N; ++j){
+            register float sum = 0;
+            for(k = 0; k < K; ++k){
+                sum += ALPHA*A[i*lda+k]*B[j*ldb + k];
+            }
+            C[i*ldc+j] += sum;
+        }
+    }
+}
+
+void my_my_gemm_tn(int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(k = 0; k < K; ++k){
+            register float A_PART = ALPHA*A[k*lda+i];
+            for(j = 0; j < N; ++j){
+                C[i*ldc+j] += A_PART*B[k*ldb+j];
+            }
+        }
+    }
+}
+
+void my_my_gemm_tt(int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float *C, int ldc)
+{
+    int i,j,k;
+    #pragma omp parallel for
+    for(i = 0; i < M; ++i){
+        for(j = 0; j < N; ++j){
+            register float sum = 0;
+            for(k = 0; k < K; ++k){
+                sum += ALPHA*A[i+k*lda]*B[k+j*ldb];
+            }
+            C[i*ldc+j] += sum;
+        }
+    }
+}
+
+
+
+
+void my_my_gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float BETA,
+        float *C, int ldc)
+{
+    //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    int i, j;
+    for(i = 0; i < M; ++i){
+        for(j = 0; j < N; ++j){
+            C[i*ldc + j] *= BETA;
+        }
+    }
+    if(!TA && !TB)
+        my_my_gemm_nn(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    else if(TA && !TB)
+        my_my_gemm_tn(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    else if(!TA && TB)
+        my_my_gemm_nt(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+    else
+        my_my_gemm_tt(M, N, K, ALPHA,A,lda, B, ldb,C,ldc);
+}
+
+void my_gemm(int TA, int TB, int M, int N, int K, float ALPHA, 
+        float *A, int lda, 
+        float *B, int ldb,
+        float BETA,
+        float *C, int ldc)
+{
+    my_my_gemm_cpu( TA,  TB,  M, N, K, ALPHA,A,lda, B, ldb,BETA,C,ldc);
+}
+
+
+
+void convolutional_compute(layer_params para, float* input, float* weight, float* output)
+{
+    long int cycle_begin, instret_begin, L1_Icache_access_begin, L1_Icache_miss_begin, L1_Dcache_read_access_begin, L1_Dcache_read_miss_begin, \
+    L1_Dcache_write_access_begin, L1_Dcache_write_miss_begin; 
+    long int cycle_end, instret_end, L1_Icache_access_end, L1_Icache_miss_end, L1_Dcache_read_access_end, L1_Dcache_read_miss_end, \
+    L1_Dcache_write_access_end, L1_Dcache_write_miss_end; 
+    long int cycles, instrets, L1_Icache_access, L1_Icache_miss, L1_Dcache_read_access, L1_Dcache_read_miss, \
+    L1_Dcache_write_access, L1_Dcache_write_miss;
+
+    cycle_begin = get_cycle();
+    instret_begin = get_instret();
+    L1_Icache_access_begin = get_L1_Icache_access();
+    L1_Icache_miss_begin = get_L1_Icache_miss();
+    L1_Dcache_read_access_begin = get_L1_Dcache_read_access();
+    L1_Dcache_read_miss_begin = get_L1_Dcache_read_miss();
+    L1_Dcache_write_access_begin = get_L1_Dcache_write_access();
+    L1_Dcache_write_miss_begin = get_L1_Dcache_write_miss();
+
+
+    int out_w = (para.input_w + 2*para.pad - para.kernel_size) / para.stride + 1;
+    int out_h = (para.input_h + 2*para.pad - para.kernel_size) / para.stride + 1;
+    int out_c = para.kernel_n;
+    int outputs = out_w*out_h*out_c;
+    int inputs = para.input_w * para.input_h * para.input_c;
+    my_fill_cpu(outputs,0,output,1);
+    int m = para.kernel_n;
+    int k = para.kernel_size * para.kernel_size * para.input_c;
+    int n = out_w * out_h;
+    float *a = weight;
+    float *b = malloc(out_w*out_h*para.input_c*para.kernel_size*para.kernel_size*sizeof(float));
+    float *c = output;
+    float *im = input;
+    if(para.kernel_size == 1)
+    {
+        b = im;
+    }
+    else
+    {
+        my_im2col_cpu(im, para.input_c, para.input_h, para.input_w, para.kernel_size, para.stride, para.pad, b);
+    }
+    my_gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+
+    cycle_end = get_cycle();
+    instret_end = get_instret();
+    L1_Icache_access_end = get_L1_Icache_access();
+    L1_Icache_miss_end = get_L1_Icache_miss();
+    L1_Dcache_read_access_end = get_L1_Dcache_read_access();
+    L1_Dcache_read_miss_end = get_L1_Dcache_read_miss();
+    L1_Dcache_write_access_end = get_L1_Dcache_write_access();
+    L1_Dcache_write_miss_end = get_L1_Dcache_write_miss();
+
+    cycles = cycle_end - cycle_begin;
+    instrets = instret_end - instret_begin;
+    L1_Icache_access = L1_Icache_access_end - L1_Icache_access_begin;
+    L1_Icache_miss = L1_Icache_miss_end - L1_Icache_miss_begin;
+    L1_Dcache_read_access = L1_Dcache_read_access_end - L1_Dcache_read_access_begin;
+    L1_Dcache_read_miss = L1_Dcache_read_miss_end - L1_Dcache_read_miss_begin;
+    L1_Dcache_write_access = L1_Dcache_write_access_end - L1_Dcache_write_access_begin;
+    L1_Dcache_write_miss = L1_Dcache_write_miss_end - L1_Dcache_write_miss_begin;
+
+    printf("\nFunction: convolutional_compute\n");
+    printf("cycles: %ld\n", cycles);
+    printf("insts retire: %ld\n", instrets);
+    printf("L1 Icache access: %ld\n", L1_Icache_access);
+    // printf("L1 Icache access begin: %ld\n", L1_Icache_access_begin);
+    printf("L1 Icache miss: %ld\n", L1_Icache_miss);
+    printf("L1 Dcache read access: %ld\n", L1_Dcache_read_access);
+    printf("L1 Dcache read miss: %ld\n", L1_Dcache_read_miss);
+    printf("L1 Dcache write access: %ld\n", L1_Dcache_write_access);
+    printf("L1 Dcache write miss: %ld\n", L1_Dcache_write_miss);
+
+    return;  
+}
+
+
+
+
+
+
+void forward_convolutional_layer(convolutional_layer l, network net)
+{
+    /*void *mdlhandle;
+    void (*convolutional_compute)(layer_params,float*,float*,float*);
+    char *mdlerror;
+    mdlhandle = dlopen("./libwork_riscv.so",RTLD_LAZY);
+    if(!mdlhandle)
+    {
+        fprintf(stderr,"%s\n",dlerror());
+        exit(1);
+    }
+    convolutional_compute = dlsym(mdlhandle,"convolutional_compute");
+    if((mdlerror = dlerror())!= NULL)
+    {
+        fprintf(stderr,"%s\n",mdlerror);
+        exit(1);
+    }*/
+    struct layer_params conv_para;
+    conv_para.input_w = l.w;
+    conv_para.input_h = l.h;
+    conv_para.input_c = l.c;
+    conv_para.kernel_n = l.n;
+    conv_para.kernel_size = l.size;
+    conv_para.stride = l.stride;
+    conv_para.pad = l.pad;
+    convolutional_compute(conv_para,net.input,l.weights,l.output);
+
+    /*if(dlclose(mdlhandle) < 0)
+    {
+        fprintf(stderr,"%s\n",dlerror());
+        exit(1);
+    }*/
+
+    if(l.batch_normalize){
+        forward_batchnorm_layer(l, net);
+    } else {
+        add_bias(l.output, l.biases, l.batch, l.n, l.out_h*l.out_w);
+    }
+
+    activate_array(l.output, l.outputs*l.batch, l.activation);
+    if(l.binary || l.xnor) swap_binary(&l);
+
+}
