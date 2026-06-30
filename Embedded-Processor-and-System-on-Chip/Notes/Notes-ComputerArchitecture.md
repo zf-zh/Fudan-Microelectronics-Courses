@@ -1,7 +1,7 @@
 ---
 title: "Computer Architecture"
 author: "张兆飞"
-date: 2026-06-05
+date: 2026-06-29
 lang: zh-CN
 mainfont: "Times New Roman"
 CJKmainfont: "Songti SC"
@@ -421,11 +421,11 @@ header-includes:
 
 | **伪指令** | **基础指令** | **意义** |
 | :---: | :---: | :---: |
-| `la rd, symbol` | `auipc rd, symbol[31:12]`<br>`addi rd, rd, symbol[11:0]` | 地址加载. |
-| `l{b\|h\|w\|d} rd, symbol` | `auipc rd, symbol[31:12]`<br>`l{b\|h\|w\|d} rd, symbol [11:0](rd)` | 全局加载. |
-| `s{b\|h\|w\|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`<br>`s{b\|h\|w\|d} rd, symbol [11:0](rt)` | 全局保存. |
-| `fl{w\|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`<br>`fl{w\|d} rd, symbol [11:0](rt)` | 浮点全局加载. |
-| `fs{w\|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`<br>`fs{w\|d} rd, symbol [11:0](rt)` | 浮点全局保存. |
+| `la rd, symbol` | `auipc rd, symbol[31:12]`; `addi rd, rd, symbol[11:0]` | 地址加载. |
+| `l{b|h|w|d} rd, symbol` | `auipc rd, symbol[31:12]`; `l{b|h|w|d} rd, symbol [11:0](rd)` | 全局加载. |
+| `s{b|h|w|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`; `s{b|h|w|d} rd, symbol [11:0](rt)` | 全局保存. |
+| `fl{w|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`; `fl{w|d} rd, symbol [11:0](rt)` | 浮点全局加载. |
+| `fs{w|d} rd, symbol, rt` | `auipc rt, symbol[31:12]`; `fs{w|d} rd, symbol [11:0](rt)` | 浮点全局保存. |
 
 * **段控制关键字 (Section Keywords)**:
   * **`.align`**: 将接下来的指令地址对齐到 $2^n$ 字节.
@@ -836,7 +836,7 @@ header-includes:
     * 访问当前地址意味着将来很有可能访问相邻地址, 可以一次性地把内存中一整块的数据装入缓存.
     * 块大小就是缓存的粒度.
     * 缓存的粒度应当是空间连续性和缓存命中率的折中. 常见的块大小为 64 Bytes.
-* **地址划分**: 物理地址划分为 标签 (Tag), 索引 (Index), 块内偏移 (Block Offset).
+* **地址划分**: 物理地址划分为标签 (Tag), 索引 (Index), 块内偏移 (Block Offset).
   * **标签 (Tag)**: 用于判断该块是否为目标块.
   * **索引 (Index)**: 用于定位缓存块属于哪个组.
 
